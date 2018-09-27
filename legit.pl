@@ -277,6 +277,16 @@ if ($ARGV[0] eq "init") {
 	} else {
 		die "no commit message blah blah\n";
 	}
+} elsif ($ARGV[0] eq "log") {
+	# ls get the filenames, 
+
+	# sort in reverse order, 
+
+	# print out
+
+} elsif ($ARGV[0] eq "show") {
+	# just show the file in specified spciefied folder
+
 } else {
 	die "legit.pl: error: unknown command $ARGV[0]\n".$helpMessage;
 }
