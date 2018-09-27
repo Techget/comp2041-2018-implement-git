@@ -59,9 +59,9 @@ sub getCurrentCommitFolderPath {
 }
 
 sub getPreviousCommitFolderPath {
-	my $previousCommitNum = getCurrentBranch();
+	my $previousCommitNum = getCurrentCommitNumber();
 	$previousCommitNum -= 1;
-	return "$rootDirName/".$previousCommitNum."/".getCurrentCommitNumber()."/";
+	return "$rootDirName/".getCurrentBranch()."/".$previousCommitNum."/";
 }
 
 sub getCurrentBranchAddedFilePath {
