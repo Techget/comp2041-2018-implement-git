@@ -19,6 +19,16 @@ my $commitMsgFileName = ".commitMsg";
 
 
 ###### helper functions
+sub mergeTwoArrayUnique {
+	my ($one_ref, $two_ref) = @_;
+    my @A = @{ $one_ref };       # dereferencing and copying each array
+    my @B = @{ $two_ref };
+
+	@seen{@A} = ();
+	@merged = (@A, grep{!exists $seen{$_}} @B);
+	return @merged;
+}
+
 sub initBranch {
 	# create new branch folder, and add .branchState file
 	my ($branchName) = @_;
@@ -81,11 +91,15 @@ sub getAllFilesListedInBranchTrackedFilesIndexFile {
 }
 
 sub getAllFilesAddedToAddedFileTemporaryFile {
-	open(my $fh, '<', getCurrentBranchAddedFilePath()) 
-		or die ".BranchAddedFile does not exists $!";
-	chomp(my @addedFiles = <$fh>);
-	close $fh;
-	return @addedFiles;
+	if (-e getCurrentBranchAddedFilePath()) {
+		open(my $fh, '<', getCurrentBranchAddedFilePath()) 
+			or die ".BranchAddedFile does not exists $!";
+		chomp(my @addedFiles = <$fh>);
+		close $fh;
+		return @addedFiles;
+	} else {
+		return ();
+	}
 }
 
 sub increaseBranchCommitNumberByOne {
@@ -270,7 +284,9 @@ if ($ARGV[0] eq "init") {
 
 	# do commit
 	if ($flag_a_set) {
+		# merge temporary addFileIndex and branchStatesTrackedIndex
 		
+
 	}
 	if ($flag_m_set) {
 		commit($commitMsg);
