@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-# use Getopt::Std; # tested work on school machine
 use File::Copy qw(copy);
+use File::Compare;
+use File::Copy::Recursive qw(dircopy);
 
 ###### Universal variables
 my $helpMessage = <<'END_MESSAGE';
@@ -21,12 +22,15 @@ my $commitMsgFileName = ".commitMsg";
 ###### helper functions
 sub mergeTwoArrayUnique {
 	my ($one_ref, $two_ref) = @_;
-    my @A = @{ $one_ref };       # dereferencing and copying each array
-    my @B = @{ $two_ref };
+    my @one = @{ $one_ref };       # dereferencing and copying each array
+    my @two = @{ $two_ref };
 
-	@seen{@A} = ();
-	@merged = (@A, grep{!exists $seen{$_}} @B);
-	return @merged;
+	my @vals = ();
+	push @vals, @one, @two;
+	my %out;
+	map { $out{$_}++ } @vals;
+	my @uniqueMerged = keys %out;
+	return @uniqueMerged;
 }
 
 sub initBranch {
@@ -243,10 +247,110 @@ sub commit {
 	print "Committed as commit ".getCurrentCommitNumber()."\n";
 }
 
+sub commitDashA {
+	my @addedFiles = getAllFilesAddedToAddedFileTemporaryFile();
+	my @trackedFiles = getAllFilesListedInBranchTrackedFilesIndexFile();
+	my @merged = mergeTwoArrayUnique(\@addedFiles, \@trackedFiles);
+
+	my %addedFilesHash = map { $_ => 1 } @addedFiles;
+
+	if (! -e getCurrentBranchAddedFilePath()) {
+		system "touch ".getCurrentBranchAddedFilePath();
+	}
+	# '>' will overwrite current file
+	open (FILE, '>', getCurrentBranchAddedFilePath()) or die "cannot open $!";
+	foreach (@merged) {
+		print FILE "$_\n";
+	}
+	close (FILE);
+}
+
+
+sub rmStatusCheck {
+	my (@rmFiles) = @_;
+	my $currentBranch = getCurrentBranch();
+	my $currentCommit = getCurrentCommitNumber();
+
+	foreach my $file (@rmFiles) {
+		if (compare($file, "$rootDirName/$currentBranch/$currentCommit/$file") != 0) {
+			die "$file is different to the last commit\n";
+		}
+	}
+
+	return 1;
+}
+
+sub rmCachedFiles {
+	my (@rmFiles) = @_;
+	my %rmFilesHash = map { $_ => 1 } @rmFiles;
+
+	my @trackedFiles = getAllFilesListedInBranchTrackedFilesIndexFile();
+
+	# overwrite
+	open (FILE, '>', getCurrentBranchTrackedFilesIndexPath());
+	foreach my $file (@trackedFiles) {
+		if (!exists $rmFilesHash{$file}) {
+			print FILE $file;
+		}
+	}
+	close (FILE);
+}
+
+sub rmFiles {
+	my (@rmFiles) = @_;
+
+	rmCachedFiles(@rmFiles);
+
+	foreach my $file (@rmFiles) {
+		unlink $file;
+	}
+}
+
+sub createNewBranch {
+	my ($branchName) = @_;
+	my $newBranchPath = "$rootDirName/$branchName/";
+
+	# check branch does not exists in .legit/
+	if (-d $newBranchPath) {
+		print "branch already exists\n";
+		exit 1;
+	}
+
+	mkdir $newBranchPath;	
+	dircopy("$rootDirName/".getCurrentBranch()."/", $newBranchPath);
+}
+
+sub deleteBranch {
+	my ($branchName) = @_;
+	my $branchPath = "$rootDirName/$branchName/";
+
+	if (! -d $branchPath) {
+		print "branch does not exist\n";
+		exit 1;
+	}
+
+	rmdir $branchPath;
+}
+
+sub branchCheckout {
+	my ($branchName) = @_;
+	my $branchPath = "$rootDirName/$branchName/";
+
+	# check if the branch exists
+	if (! -d $branchPath) {
+		print "branch does not exist\n";
+		exit 1;
+	}
+
+	# change the .legitStatesCurrentBranch
+	open (FILE, '>', "$rootDirName/$legitStateCurrentBranchFileName") or die "cannot open $!";
+	print FILE $branchName;
+	close (FILE);
+}
 
 
 
-###### main switch case
+###### main function
 if (@ARGV == 0) {
 	print $helpMessage;
 	exit 0;
@@ -285,8 +389,7 @@ if ($ARGV[0] eq "init") {
 	# do commit
 	if ($flag_a_set) {
 		# merge temporary addFileIndex and branchStatesTrackedIndex
-		
-
+		commitDashA();
 	}
 	if ($flag_m_set) {
 		commit($commitMsg);
@@ -294,6 +397,7 @@ if ($ARGV[0] eq "init") {
 		die "no commit message blah blah\n";
 	}
 } elsif ($ARGV[0] eq "log") {
+	checkIfRootDirExist();
 	# ls get the filenames, 
 
 	# sort in reverse order, 
@@ -301,7 +405,80 @@ if ($ARGV[0] eq "init") {
 	# print out
 
 } elsif ($ARGV[0] eq "show") {
+	checkIfRootDirExist();
 	# just show the file in specified spciefied folder
+
+} elsif ($ARGV[0] eq "rm") {
+	checkIfRootDirExist();
+	# extract flags
+	my $flag_force_set = 0;
+	my $flag_cached_set = 0;
+	foreach my $arg (@ARGV[1..@ARGV-1]) {
+		if ($arg =~ m/^\-/) {
+			if ($arg eq "--cached") {
+				$flag_cached_set = 1;
+			} elsif ($arg eq "--forced") {
+				$flag_force_set = 1;
+			} else {
+				die "unknown rm option\n";
+			}
+		} 
+	}
+
+	my @args = @ARGV[1..@ARGV-1];
+	my @rmFiles = grep(!/^\-/, @args);
+
+	if ($flag_cached_set && ($flag_force_set || rmStatusCheck(@rmFiles))) {
+		rmCachedFiles(@rmFiles);
+	} elsif ($flag_force_set || rmStatusCheck(@rmFiles)) {
+		rmFiles(@rmFiles);
+	}
+} elsif ($ARGV[0] eq "status") {
+	checkIfRootDirExist();
+	# compare between files in the folder with files in the lastest commit folder
+
+	# if it not in the commit folder, then check if the addedFileIndex exists
+
+	# if both not, untracked
+
+	# Also, compare .branchStatesTrakcedFileIndex with files in the folder, if mismatch,
+	# should be file deleted manually
+
+	# last but not least, in the example the `e - deleted`, I think should not exist, since deleted 
+	# in folder and index, should no longer have knowledge about that file, check on piazza, if still needed
+	# one ugly fix is: record the deleted fild in another file, may call that `.branchStatesRMedFiles` 
+
+} elsif ($ARGV[0] eq "branch") {
+	checkIfRootDirExist();
+	my $flag_d_set = 0;
+	foreach my $arg (@ARGV[1..@ARGV-1]) {
+		if ($arg =~ m/^\-/) {
+			if ($arg eq "-d") {
+				$flag_d_set = 1;
+			}
+		}
+	}
+
+	my @args = @ARGV[1..@ARGV-1];
+	my @branchNames = grep(!/^\-/, @args);
+	# make an assumption, only one branch name for each command
+	my $branchName = $branchNames[0];
+
+	if ($flag_d_set) {
+		# delete branch
+		deleteBranch($branchName);
+	} else {
+		# create new branch
+		createNewBranch($branchName);
+	}
+} elsif ($ARGV[0] eq "checkout") {
+
+	checkIfRootDirExist();
+	branchCheckout($ARGV[1]);
+
+} elsif ($ARGV[0] eq "merge") {
+	checkIfRootDirExist();
+	# use commit number, last modfieid time to merge
 
 } else {
 	die "legit.pl: error: unknown command $ARGV[0]\n".$helpMessage;
