@@ -290,7 +290,7 @@ sub rmCachedFiles {
 	open (FILE, '>', getCurrentBranchTrackedFilesIndexPath());
 	foreach my $file (@trackedFiles) {
 		if (!exists $rmFilesHash{$file}) {
-			print FILE $file;
+			print FILE "$file\n";
 		}
 	}
 	close (FILE);
